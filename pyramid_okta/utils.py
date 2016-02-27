@@ -1,12 +1,12 @@
 import base64
 import datetime
 import okta
+import projex.rest
 import logging
 
 from dateutil import parser as dateutil_parser
 from . import settings
 
-from pyramid.httpexceptions import HTTPUnauthorized
 
 log = logging.getLogger(__name__)
 
@@ -84,6 +84,17 @@ def get_credentials(request):
             request.client_secret = client_secret
 
     return token_type, token
+
+def get_user_profile(user_id):
+    user_client = okta.UsersClient(settings.BASE_URL, settings.API_TOKEN)
+    try:
+        response = user_client.get_path('/{0}'.format(user_id))     # built-in get user strips out profile info
+    except Exception as err:
+        return {}
+    else:
+        content = projex.rest.unjsonify(response.content)
+        return content.get('profile')
+
 
 def groupfinder(userid, request):
     groups_client = okta.UserGroupsClient(settings.BASE_URL, settings.API_TOKEN)

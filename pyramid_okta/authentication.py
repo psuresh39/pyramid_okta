@@ -8,7 +8,6 @@ from pyramid.httpexceptions import HTTPBadRequest
 from pyramid.httpexceptions import HTTPUnauthorized
 
 from . import utils
-from .import settings
 
 log = logging.getLogger(__name__)
 
@@ -43,7 +42,7 @@ class OktaAuthenticationPolicy(CallbackAuthenticationPolicy):
         else:
             utils.clear_session(token['access_token'])
 
-    def authenticated_userid(self, request):
+    def unauthenticated_userid(self, request):
         token = self._get_token(request)
         if not token:
             return None
