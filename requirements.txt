@@ -1,3 +1,1 @@
-okta==0.0.3
-pyramid==1.6.1
-paste==2.0.3
+# specify requirements
