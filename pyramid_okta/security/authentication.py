@@ -32,7 +32,7 @@ class OktaAuthenticationPolicy(object):
         Default: ``Realm``.  The Basic Auth realm string.
     """
 
-    def __init__(self, check, realm='Realm'):
+    def __init__(self, check=utils.authenticate, realm='Realm'):
         self.check = check
         self.realm = realm
 
