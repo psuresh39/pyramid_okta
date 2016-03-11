@@ -1,113 +1,151 @@
-import base64
-import datetime
 import okta
 import projex.rest
 import logging
+import binascii
 
-from dateutil import parser as dateutil_parser
 from . import settings
+from pyramid.httpexceptions import HTTPBadRequest
+from pyramid.httpexceptions import HTTPUnauthorized
+from paste.httpheaders import AUTHORIZATION
+from okta.framework.OktaError import OktaError
+from okta.framework.ApiClient import ApiClient
 
 
 log = logging.getLogger(__name__)
 
-def authenticate(username, password):
-    auth_client = okta.AuthClient(settings.BASE_URL, settings.API_TOKEN)
 
+def get_credentials(request):
+    """
+    Parse Authorization HTTP header and return credentials
+    :param request: <pyramid.request>
+    :return: <dict> containing client_id and client_secret
+    """
+    authorization = AUTHORIZATION(request.environ)
     try:
-        response = auth_client.authenticate(username, password)
-    except Exception as err:
-        return {}
-    else:
-        session_client = okta.SessionsClient(settings.BASE_URL, settings.API_TOKEN)
-        session = session_client.create_session_by_session_token(response.sessionToken)
+        authmethod, auth = authorization.split(' ', 1)
+    except ValueError:  # not enough values to unpack
+        raise HTTPBadRequest()
 
-        expires_at = dateutil_parser.parse(response.expiresAt).replace(tzinfo=None)
-
-        output = {
-            'access_token': session.id,
-            'refresh_token': response.sessionToken,
-            'user_id': session.userId,
-            'expires_in': (expires_at - datetime.datetime.utcnow()).seconds
+    if authmethod.lower() == 'basic':
+        try:
+            auth = auth.strip().decode('base64')
+        except binascii.Error:  # can't decode
+            raise HTTPBadRequest()
+        try:
+            client_id, client_secret = auth.split(':', 1)
+        except ValueError:  # not enough values to unpack
+            raise HTTPBadRequest()
+        return {
+            'client_id': client_id,
+            'client_secret': client_secret
         }
-        return output
+    elif authmethod.lower() == 'bearer':
+        try:
+            session_token = auth.strip()
+        except binascii.Error:  # can't decode
+            raise HTTPBadRequest()
+        session = validate_session(session_token)
+        return {
+            'client_id': session['user_id'],
+            'client_secret': None
+        }
+    else:
+        raise HTTPUnauthorized()
+
+
+def authenticate(credentials, request):
+    """
+    Authenticate credentials against Okta
+    :param credentials: <dict>
+    :param request: <pyramid.request>
+    :return: <list> principals representing requesting user
+    """
+    authorization = AUTHORIZATION(request.environ)
+    try:
+        authmethod, auth = authorization.split(' ', 1)
+    except ValueError:  # not enough values to unpack
+        raise HTTPBadRequest()
+
+    if authmethod.lower() == 'basic':
+        auth_client = okta.AuthClient(settings.BASE_URL, settings.API_TOKEN)
+        try:
+            response = auth_client.authenticate(
+                credentials['client_id'],
+                credentials['client_secret']
+            )
+        except OktaError:
+            return None
+        else:
+            return get_user_groups(response['_embedded']['user']['id'])
+    elif authmethod.lower() == 'bearer':
+        try:
+            session = validate_session(credentials['client_id'])
+        except OktaError:
+            return None
+        else:
+            return get_user_groups(session['user_id'])
+
 
 def clear_session(session_id):
+    """
+    Clear session at Okta
+    :param session_id: <str>
+    :return: <bool>
+    """
     session_client = okta.SessionsClient(settings.BASE_URL, settings.API_TOKEN)
-
     try:
-        response = session_client.clear_session(session_id)
-    except Exception as err:
+        _ = session_client.clear_session(session_id)
+    except OktaError:
         return False
     else:
         return True
 
-def get_credentials(request):
+
+def get_user_groups(user_id):
     """
-    Extract the authentication token information.  Supported authentication include:
-
-    * Bearer <token>
-    * Basic <client_id>:<client_secret>
-
-
-    :param request: <pyramid.request.Request>
-
-    :return: <str> token_type, <str> token
+    Return all participating groups of user
+    :param user_id: <str>
+    :return: <list> user groups
     """
-    if 'Authorization' in request.headers:
-        auth = request.headers.get('Authorization')
-    elif 'authorization' in request.headers:
-        auth = request.headers.get('authorization')
+    user_client = okta.UsersClient(settings.BASE_URL, settings.API_TOKEN)
+    try:
+        response = ApiClient.get_path(user_client, '/{0}/groups'.format(user_id))
+    except OktaError:
+        return []
     else:
-        log.debug('no authorization header found.')
-        return None, None
+        groups = []
+        for group in response.json():
+            groups.append(group['profile']['name'])
+        return groups
 
-    if (not auth.lower().startswith('bearer') and
-        not auth.lower().startswith('basic')):
-        log.debug('authorization header not of type bearer or basic: %s'
-            % auth.lower())
-        return None, None
-
-    parts = auth.split()
-    if len(parts) != 2:
-        return None, None
-
-    token_type = parts[0].lower()
-    token = base64.b64decode(parts[1])
-
-    if token_type == 'basic':
-        client_id, client_secret = token.split(':')
-        if client_id.lower() == 'bearer':
-            token_type = 'bearer'
-            token = client_secret
-        else:
-            request.client_id = client_id
-            request.client_secret = client_secret
-
-    return token_type, token
 
 def get_user_profile(user_id):
+    """
+    Return user profile information
+    :param user_id: <str>
+    :return: <dict>
+    """
     user_client = okta.UsersClient(settings.BASE_URL, settings.API_TOKEN)
     try:
         response = user_client.get_path('/{0}'.format(user_id))     # built-in get user strips out profile info
-    except Exception as err:
+    except OktaError:
         return {}
     else:
         content = projex.rest.unjsonify(response.content)
         return content.get('profile')
 
 
-def groupfinder(userid, request):
-    groups_client = okta.UserGroupsClient(settings.BASE_URL, settings.API_TOKEN)
-    pass
-
-
 def validate_session(session_id):
+    """
+    Validate session token
+    :param session_id: <str>
+    :return: <dict>
+    """
     session_client = okta.SessionsClient(settings.BASE_URL, settings.API_TOKEN)
-
     try:
         response = session_client.validate_session(session_id)
-    except Exception as err:
-        return {}
+    except OktaError:
+        raise
     else:
         output = {
             'access_token': session_id,
