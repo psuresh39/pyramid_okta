@@ -63,7 +63,11 @@ setup(
     url='https://github.com/bitesofcode/pyramid_okta',
     include_package_data=True,
     packages=find_packages(),
-    install_requires=[],
+    install_requires=[
+        'pyramid',
+        'paste',
+        'okta'
+    ],
     cmdclass={
         'tag': tag
     },
