@@ -24,8 +24,7 @@ class OktaAuthenticationPolicy(object):
     ``check``
 
         A callback passed the credentials and the request,
-        expected to return None if the userid doesn't exist or a user id
-        if the user does exist. Required.
+        expected to return list of principals corresponding to user. Required.
 
     ``realm``
 
@@ -56,7 +55,7 @@ class OktaAuthenticationPolicy(object):
         :return: <list> group names
         """
         effective_principals = [Everyone]
-        credentials = utils.get_basicauth_credentials(request)
+        credentials = utils.get_credentials(request)
         if credentials is None:
             return effective_principals
         user_id = credentials['client_id']
@@ -65,6 +64,7 @@ class OktaAuthenticationPolicy(object):
             effective_principals.append(user_id)
         else:
             effective_principals.append(Authenticated)
+            effective_principals.append('login_required')
             effective_principals.extend(groups)
         return effective_principals
 
