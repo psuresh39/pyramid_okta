@@ -47,6 +47,8 @@ class OktaAuthenticationPolicy(object):
         user_id = credentials['client_id']
         if self.check(credentials, request) is not None:
             return user_id
+        else:
+            return None
 
     def effective_principals(self, request):
         """
