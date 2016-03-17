@@ -7,7 +7,7 @@ from pyramid_okta import settings
 from pyramid.httpexceptions import HTTPBadRequest
 from pyramid.httpexceptions import HTTPUnauthorized
 from paste.httpheaders import AUTHORIZATION
-from okta.framework.OktaError import OktaError
+from okta.framework.OktaError import OktaError as OktaError
 from okta.framework.ApiClient import ApiClient
 
 
