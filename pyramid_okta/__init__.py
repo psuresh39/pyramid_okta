@@ -15,11 +15,3 @@ def includeme(config):
 
     # set up request methods
     config.add_request_method(OktaRequestExtra, 'okta_extras', property=True)
-
-    # set the session factory
-    config.set_session_factory(
-        OktaSessionFactory(
-            okta_base_url=settings.BASE_URL,
-            okta_api_token=settings.API_TOKEN,
-        )
-    )
