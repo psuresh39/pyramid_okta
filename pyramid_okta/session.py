@@ -2,12 +2,22 @@ __author__ = 'psuresh'
 
 from pyramid.interfaces import ISession
 from pyramid.compat import PY3, pickle
-from pyramid.session import manage_accessed, manage_changed
+from pyramid.session import manage_changed
 from zope.interface import implementer
 import time
 import dateutil.parser
 import requests
 from pyramid_okta.utils import clear_session
+from pyramid_okta.utils import OktaError
+
+
+def manage_accessed(wrapped):
+    """ Decorator which causes a cookie to be renewed when an accessor
+    method is called."""
+    def accessed(session, *arg, **kw):
+        return wrapped(session, *arg, **kw)
+    accessed.__doc__ = wrapped.__doc__
+    return accessed
 
 
 def OktaSessionFactory(
@@ -18,9 +28,7 @@ def OktaSessionFactory(
         path='/',
         domain=None,
         secure=False,
-        httponly=False,
-        reissue_time=0,
-        set_on_exception=True,
+        httponly=False
         ):
 
     @implementer(ISession)
@@ -36,8 +44,6 @@ def OktaSessionFactory(
         _cookie_domain = domain
         _cookie_secure = secure
         _cookie_httponly = httponly
-        _cookie_on_exception = set_on_exception
-        _reissue_time = reissue_time
 
         # dirty flag
         _dirty = False
@@ -61,9 +67,7 @@ def OktaSessionFactory(
                     self._okta_base_url + '/api/v1/sessions/' + cookieval,
                     headers=headers
                 )
-                if response.status_code != 200:
-                    value = None
-                else:
+                if response.status_code == 200:
                     value = response.json()
 
             if value is not None:
@@ -89,7 +93,6 @@ def OktaSessionFactory(
                 state = {}
 
             self.expires = expires
-            self.accessed = renewed
             self.renewed = renewed
             self.new = new
             dict.__init__(self, state)
@@ -106,14 +109,16 @@ def OktaSessionFactory(
 
         def invalidate(self):
             cookieval = self._get_cookie()
-            clear_session(cookieval)
-            self.clear()  # XXX probably needs to unset cookie
-            self.request.response.set_cookie(
-                self._cookie_name,
-                value='',
-                expires=0
-            )
-
+            if cookieval:
+                try:
+                    clear_session(cookieval)
+                except OktaError:
+                    return False
+                else:
+                    self.clear()
+                    return True
+            else:
+                return False
 
         # non-modifying dictionary methods
         get = manage_accessed(dict.get)
@@ -171,21 +176,16 @@ def OktaSessionFactory(
                 token = self.new_csrf_token()
             return token
 
-        # non-API methods
-        def _get_cookie_from_request(self):
-            return self.request.okta_extras.access_token
-
         def _get_cookie(self):  # cookie value, not file value itself
             value = self.request.cookies.get(self._cookie_name, '')
             return value
 
         def _set_cookie(self, response):
-            if not self._cookie_on_exception:
-                exception = getattr(self.request, 'exception', None)
-                if exception is not None:  # dont set a cookie during exceptions
-                    return False
+            session = self.get('session', None)
+            if session is None:
+                return False
 
-            cookieval = self.new and self._get_cookie_from_request() or self._get_cookie()
+            cookieval = self.new and session['id'] or self._get_cookie()
             if not cookieval:
                 return False
 
@@ -196,8 +196,7 @@ def OktaSessionFactory(
                 path=self._cookie_path,
                 domain=self._cookie_domain,
                 secure=self._cookie_secure,
-                httponly=self._cookie_httponly,
-                expires=self.expires
+                httponly=self._cookie_httponly
                 )
             return True
 
