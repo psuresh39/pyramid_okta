@@ -7,11 +7,15 @@ from pyramid_okta import settings
 from pyramid.httpexceptions import HTTPBadRequest
 from pyramid.httpexceptions import HTTPUnauthorized
 from paste.httpheaders import AUTHORIZATION
-from okta.framework.OktaError import OktaError as OktaError
+from okta.framework.OktaError import OktaError
 from okta.framework.ApiClient import ApiClient
 
 
 log = logging.getLogger(__name__)
+
+
+OktaUserAlreadyActivatedError = 'E0000016'
+OktaUserNotFound = 'E0000007'
 
 
 def parse_auth_header(request):
@@ -187,7 +191,7 @@ def get_user_groups(user_id):
         return groups
 
 
-def get_user_profile(user_id):
+def get_user(user_id):
     """
     Return user profile information
     :param user_id: <str>
@@ -204,11 +208,11 @@ def get_user_profile(user_id):
         headers=headers
     )
     try:
-        profile = response.json()['profile']
-    except KeyError:
+        user = response.json()
+    except ValueError:
         raise
     else:
-        return response.json()['profile']
+        return user
 
 
 def validate_session(session_id):
