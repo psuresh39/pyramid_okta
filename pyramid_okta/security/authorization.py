@@ -8,6 +8,10 @@ class OktaAuthorizationPolicy(object):
         """ Return ``True`` if any of the ``principals`` is allowed the
         ``permission`` in the current ``context``, else return ``False``
         """
+
+        if not permission:
+            return True
+
         if permission in principals:
             return True
         else:
