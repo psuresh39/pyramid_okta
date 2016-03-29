@@ -66,7 +66,7 @@ class OktaAuthenticationPolicy(object):
             effective_principals.append(user_id)
         else:
             effective_principals.append(Authenticated)
-            effective_principals.append('login_required')
+            effective_principals.append('authenticated')
             effective_principals.extend(groups)
         return effective_principals
 
