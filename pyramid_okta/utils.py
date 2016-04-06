@@ -6,6 +6,7 @@ import requests
 from pyramid_okta import settings
 from pyramid.httpexceptions import HTTPBadRequest
 from pyramid.httpexceptions import HTTPUnauthorized
+from pyramid.httpexceptions import HTTPNotFound
 from paste.httpheaders import AUTHORIZATION
 from okta.framework.OktaError import OktaError as OktaError
 from okta.framework.ApiClient import ApiClient
@@ -13,7 +14,7 @@ from okta.framework.ApiClient import ApiClient
 
 log = logging.getLogger(__name__)
 
-
+LoginValidationError = 'E0000001'
 OktaUserAlreadyActivatedError = 'E0000016'
 OktaUserNotFound = 'E0000007'
 
@@ -207,12 +208,25 @@ def get_user(user_id):
         settings.BASE_URL + '/api/v1/users/' + user_id,
         headers=headers
     )
-    try:
-        user = response.json()
-    except ValueError:
-        raise
+
+    user = response.json()
+    if 'errorId' in user:
+        raise HTTPNotFound()
     else:
         return user
+
+
+def delete_user(user_id):
+    headers = {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Authorization': 'SSWS ' + settings.API_TOKEN
+    }
+
+    response = requests.delete(
+        settings.BASE_URL + '/api/v1/users/' + user_id,
+        headers=headers
+    )
 
 
 def validate_session(session_id):
