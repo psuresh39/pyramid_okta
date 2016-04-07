@@ -44,9 +44,9 @@ class OktaAuthenticationPolicy(object):
         credentials = utils.get_credentials(request)
         if credentials is None:
             return None
-        user_id = credentials['client_id']
-        if self.check(credentials, request) is not None:
-            return user_id
+        groups = self.check(credentials, request)
+        if groups is not None:
+            return groups[-1]
         else:
             return None
 
@@ -61,10 +61,9 @@ class OktaAuthenticationPolicy(object):
         if credentials is None:
             return effective_principals
         user_id = credentials['client_id']
+        effective_principals.append(user_id)
         groups = self.check(credentials, request)
-        if groups is None:
-            effective_principals.append(user_id)
-        else:
+        if groups is not None:
             effective_principals.append(Authenticated)
             effective_principals.append('authenticated')
             effective_principals.extend(groups)
