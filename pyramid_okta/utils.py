@@ -135,13 +135,17 @@ def authenticate(credentials, request):
     if authmethod.lower() == 'basic':
         response = basic_auth(credentials)
         if response:
-            return get_user_groups(response['user']['id'])
+            groups = get_user_groups(response['user']['id'])
+            groups.append(response['user']['id'])
+            return groups
     elif authmethod.lower() == 'bearer':
         session = bearer_auth(credentials)
         if session:
             # set request access_token
             request.okta_extras.set_access_token(session['access_token'])
-            return get_user_groups(session['user_id'])
+            groups = get_user_groups(session['user_id'])
+            groups.append(session['user_id'])
+            return groups
 
 
 def create_session_by_session_token(session_token):
