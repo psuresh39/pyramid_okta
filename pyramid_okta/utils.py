@@ -3,6 +3,7 @@ import logging
 import binascii
 import requests
 
+from httplib import OK
 from pyramid_okta import settings
 from pyramid.httpexceptions import HTTPBadRequest
 from pyramid.httpexceptions import HTTPUnauthorized
@@ -154,13 +155,21 @@ def create_session_by_session_token(session_token):
     :param session_token: <str>
     :return: <dict>
     """
-    session_client = okta.SessionsClient(settings.BASE_URL, settings.API_TOKEN)
-    try:
-        session = session_client.create_session_by_session_token(session_token)
-    except OktaError:
-        return None
+    headers = {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Authorization': 'SSWS ' + settings.API_TOKEN
+    }
+
+    response = requests.post(
+        settings.BASE_URL + '/api/v1/sessions',
+        json={'sessionToken': session_token},
+        headers=headers
+    )
+    if response.status_code == OK:
+        return response.json()
     else:
-        return session.__dict__
+        return None
 
 
 def clear_session(session_id):
