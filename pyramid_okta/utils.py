@@ -2,12 +2,14 @@ import okta
 import logging
 import binascii
 import requests
+import urlparse
 
 from httplib import OK
 from pyramid_okta import settings
 from pyramid.httpexceptions import HTTPBadRequest
 from pyramid.httpexceptions import HTTPUnauthorized
 from pyramid.httpexceptions import HTTPNotFound
+from pyramid.httpexceptions import exception_response
 from paste.httpheaders import AUTHORIZATION
 from okta.framework.OktaError import OktaError as OktaError
 from okta.framework.ApiClient import ApiClient
@@ -19,6 +21,34 @@ LoginValidationError = 'E0000001'
 OktaUserAlreadyActivatedError = 'E0000016'
 OktaUserNotFound = 'E0000007'
 
+# ---------------------------
+
+# wrap request methods
+def authenticated(func):
+    def wrapped(*args, **kwds):
+        headers = kwds.get('headers') or {}
+        headers.update({
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'Authorization': 'SSWS ' + settings.API_TOKEN
+        })
+
+        kwds['headers'] = headers
+        response = func(*args, **kwds)
+        data = response.json()
+        if response.status_code != OK:
+            log.error(unicode(data))
+            raise exception_response(response.status_code)
+        else:
+            return data
+    return wrapped
+
+get     = authenticated(requests.get)
+post    = authenticated(requests.post)
+put     = authenticated(requests.put)
+delete  = authenticated(requests.delete)
+
+# -----------------------
 
 def parse_auth_header(request):
     """
@@ -155,21 +185,7 @@ def create_session_by_session_token(session_token):
     :param session_token: <str>
     :return: <dict>
     """
-    headers = {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-        'Authorization': 'SSWS ' + settings.API_TOKEN
-    }
-
-    response = requests.post(
-        settings.BASE_URL + '/api/v1/sessions',
-        json={'sessionToken': session_token},
-        headers=headers
-    )
-    if response.status_code == OK:
-        return response.json()
-    else:
-        return None
+    return post(route('/api/v1/sessions'), json={'sessionToken': session_token})
 
 
 def clear_session(session_id):
@@ -186,61 +202,96 @@ def clear_session(session_id):
     else:
         return True
 
+def get_groups(filter='', limit=None, app_id=None):
+    """
+    Returns the available groups from okta, filtering based on the app id if provided.
 
-def get_user_groups(user_id):
+    :param app_id:
+    :return: [<dict>, ..]
+    """
+    if app_id is None:
+        app_id = settings.APPLICATION_ID
+
+    if app_id:
+        url = route('/api/v1/apps/{app}/groups', app=app_id)
+    else:
+        url = route('/api/v1/groups')
+
+    data = {}
+    if limit != None:
+        data['limit'] = limit
+    if filter:
+        data['filter'] = filter
+
+    return get(url, params=data)
+
+def get_group(group_id):
+    """
+    Returns the okta group for the given group_id.
+
+    :param group_id: <str>
+    :return: <dict>
+    """
+    return get(route('/api/v1/groups/{id}', id=group_id))
+
+def get_user_groups(user_id, app_id=None):
     """
     Return all participating groups of user
     :param user_id: <str>
+    :param app_id: <str>
     :return: <list> user groups
     """
-    user_client = okta.UsersClient(settings.BASE_URL, settings.API_TOKEN)
-    try:
-        response = ApiClient.get_path(user_client, '/{0}/groups'.format(user_id))
-    except OktaError:
-        return []
+    if app_id is None:
+        app_id = settings.APPLICATION_ID
+
+    # filter based on an application's associated groups
+    if app_id:
+        app_groups = get(route('/api/v1/apps/{id}/groups/', id=app_id))
+        app_groups = [grp['id'] for grp in app_groups]
     else:
-        groups = []
-        for group in response.json():
-            groups.append(group['profile']['name'])
-        return groups
+        app_groups = None
+
+    user_groups = get(route('/api/v1/users/{user}/groups', user=user_id))
+    groups = []
+    for group in user_groups:
+        group_id = group['id']
+        name = group['profile']['name']
+        if app_groups is None or group_id in app_groups:
+            groups.append(name)
+    return groups
 
 
-def get_user(user_id):
+def get_user(user_id, app_id=None):
     """
     Return user profile information
     :param user_id: <str>
+    :param app_id: <str> || None
     :return: <dict>
     """
-    headers = {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-        'Authorization': 'SSWS ' + settings.API_TOKEN
-    }
+    if app_id is None:
+        app_id = settings.APPLICATION_ID
 
-    response = requests.get(
-        settings.BASE_URL + '/api/v1/users/' + user_id,
-        headers=headers
-    )
-
-    user = response.json()
-    if 'errorId' in user:
-        raise HTTPNotFound()
+    if app_id:
+        url = route('/api/v1/apps/{app}/users/{user}', app=app_id, user=user_id)
     else:
-        return user
+        url = route('/api/v1/users/{user}', user=user_id)
 
+    return get(url)
+
+
+def route(uri, **kwds):
+    """
+    Generates a full URL to the okta instance based on the base url from the settings.
+
+    :param uri: <str>
+    :param kwds: <kwargs>
+    :return: <str>
+    """
+    return urlparse.urljoin(settings.BASE_URL, uri).format(**kwds)
 
 def delete_user(user_id):
-    headers = {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-        'Authorization': 'SSWS ' + settings.API_TOKEN
-    }
-
-    response = requests.delete(
-        settings.BASE_URL + '/api/v1/users/' + user_id,
-        headers=headers
-    )
-
+    url = route('/api/v1/users/{user}', user=user_id)
+    return delete(url)
 
 def validate_session(session_id):
     """

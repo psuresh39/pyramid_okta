@@ -8,6 +8,7 @@ from pyramid_okta.session import OktaSessionFactory
 def includeme(config):
     settings.API_TOKEN = config.registry.settings.get('okta.api_token', settings.API_TOKEN)
     settings.BASE_URL = config.registry.settings.get('okta.base_url', settings.BASE_URL)
+    settings.APPLICATION_ID = config.registry.settings.get('okta.application_id', settings.APPLICATION_ID)
 
     # set up authn/z policies
     config.set_authentication_policy(OktaAuthenticationPolicy())
