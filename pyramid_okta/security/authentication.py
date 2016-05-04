@@ -8,6 +8,7 @@ __copyright__ = 'Copyright Tesla Motors Inc. 2016'
 
 import logging
 
+from pyramid.httpexceptions import HTTPBadRequest
 from pyramid.security import Everyone
 from pyramid.security import Authenticated
 from pyramid_okta import utils
@@ -75,8 +76,16 @@ class OktaAuthenticationPolicy(object):
         :param request: <pyramid.request>
         :return: user_id
         """
-        credentials = utils.get_credentials(request)
-        if credentials is None:
-            return None
-        user_id = credentials['client_id']
-        return user_id
+        if 'id' in request.session:
+            resp = utils.validate_session(request.session['id'])
+            return resp['user_id']
+        else:
+            try:
+                credentials = utils.get_credentials(request)
+            except HTTPBadRequest:
+                credentials = None
+
+            if credentials is None:
+                return None
+            user_id = credentials['client_id']
+            return user_id

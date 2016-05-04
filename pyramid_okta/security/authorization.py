@@ -12,6 +12,13 @@ class OktaAuthorizationPolicy(object):
         if not permission:
             return True
 
+        if isinstance(permission, (list, set, tuple)):
+            for permit in permission:
+                if permit in principals:
+                    return True
+            else:
+                return False
+
         if permission in principals:
             return True
         else:
